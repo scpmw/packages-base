@@ -1,5 +1,5 @@
 {-# LANGUAGE Unsafe #-}
-{-# LANGUAGE MagicHash, UnboxedTuples #-}
+{-# LANGUAGE MagicHash, UnboxedTuples, CPP #-}
 
 -----------------------------------------------------------------------------
 -- |
@@ -40,6 +40,15 @@ module Debug.Trace (
         -- $markers
         traceMarker,
         traceMarkerIO,
+
+        -- * Task tracing
+        Task,
+        createTask,
+        startTask,
+        stopTask,
+        dependOnTask,
+        getTaskId,
+        isTaskNull,
   ) where
 
 import Prelude
@@ -275,3 +284,44 @@ traceMarkerIO :: String -> IO ()
 traceMarkerIO msg =
   GHC.Foreign.withCString utf8 msg $ \(Ptr p) -> IO $ \s ->
     case traceMarker# p s of s' -> (# s', () #)
+
+#ifdef __GLASGOW_HASKELL__
+data Task = Task Word#
+
+createTask :: IO Task
+createTask = IO $ \s -> case createTask# s of (# s', t #) -> (# s', Task t #)
+
+startTask :: Task -> IO ()
+startTask (Task t) = IO $ \s -> case startTask# t s of s' -> (# s', () #)
+
+stopTask :: Task -> IO ()
+stopTask (Task t) = IO $ \s -> case stopTask# t s of s' -> (# s', () #)
+
+dependOnTask :: Task -> Task -> IO ()
+dependOnTask (Task t1) (Task t2) = IO $ \s ->
+  case dependOnTask# t1 t2 s of s' -> (# s', () #)
+
+getTaskId :: IO Task
+getTaskId = IO $ \s -> case getTaskId# s of (# s', t #) -> (# s', Task t #)
+
+isTaskNull :: Task -> Bool
+isTaskNull (Task n) = I# (word2Int# n) == 0
+
+instance Show Task where
+  show (Task w) = show (W# w)
+
+#else
+data Task = Task
+createTask   :: IO Task
+createTask       = return Task
+startTask    :: Task -> IO ()
+startTask    _   = return ()
+stopTask     :: Task -> IO ()
+stopTask     _   = return ()
+dependOnTask :: Task -> Task -> IO ()
+dependOnTask _ _ = return ()
+getTaskId    :: IO Task
+getTaskId        = return Task
+isTaskNull   :: Task -> Bool
+isTaskNull       = True
+#endif
